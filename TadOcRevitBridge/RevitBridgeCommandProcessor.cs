@@ -279,7 +279,7 @@ namespace TadOcRevitBridge
             {
                 var cloudPath = doc.GetCloudModelPath();
                 summary["projectGuid"] = cloudPath.GetProjectGUID().ToString();
-                summary["modelGuid"] = doc.CloudModelGUID.ToString();
+                summary["modelGuid"] = cloudPath.GetModelGUID().ToString();
                 summary["region"] = cloudPath.Region;
             }
             catch
@@ -521,14 +521,11 @@ namespace TadOcRevitBridge
                 return null;
             }
 
-            var valueProperty = typeof(ElementId).GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
-            if (valueProperty != null && valueProperty.PropertyType == typeof(long))
-            {
-                var value = (long)valueProperty.GetValue(id, null);
-                return value.ToString(CultureInfo.InvariantCulture);
-            }
-
+#if REVIT2024
             return id.IntegerValue.ToString(CultureInfo.InvariantCulture);
+#else
+            return id.Value.ToString(CultureInfo.InvariantCulture);
+#endif
         }
 
         private static string NormalizeExportScope(string exportScope)
