@@ -12,6 +12,7 @@ namespace TadOcRevitBridge
             "revit_create_wall",
             "revit_session_status",
             "revit_open_cloud_model",
+            "revit_activate_document",
             "revit_list_3d_views",
             "revit_export_nwc"
         };
@@ -218,5 +219,11 @@ namespace TadOcRevitBridge
 
         [JsonProperty("exportScope")]
         public string ExportScope { get; set; }
+    }
+
+    internal sealed class ActivateDocumentPayload
+    {
+        [JsonProperty("documentTitle")]
+        public string DocumentTitle { get; set; }
     }
 }

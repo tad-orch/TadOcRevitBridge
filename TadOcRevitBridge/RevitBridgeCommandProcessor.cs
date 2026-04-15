@@ -41,6 +41,8 @@ namespace TadOcRevitBridge
                     return HandleSessionStatus(uiApp, request);
                 case "revit_open_cloud_model":
                     return HandleOpenCloudModel(uiApp, request);
+                case "revit_activate_document":
+                    return HandleActivateDocument(uiApp, request);
                 case "revit_list_3d_views":
                     return HandleList3DViews(uiApp, request);
                 case "revit_export_nwc":
@@ -163,6 +165,60 @@ namespace TadOcRevitBridge
             result["openedInUi"] = false;
             result["activeDocumentChanged"] = false;
             result["openedDocument"] = BuildDocumentSummary(openedDocument, false);
+            return result;
+        }
+
+        private JObject HandleActivateDocument(UIApplication uiApp, BridgeRequest request)
+        {
+            var payload = BridgeJson.ReadPayload<ActivateDocumentPayload>(request);
+            var documentTitle = (payload.DocumentTitle ?? string.Empty).Trim();
+
+            if (documentTitle.Length == 0)
+            {
+                throw new BridgeCommandException("invalid_payload", "documentTitle is required for revit_activate_document.");
+            }
+
+            var allDocs = uiApp.Application.Documents.Cast<Document>().ToList();
+            var targetDoc = allDocs.FirstOrDefault(d =>
+                d.Title.Equals(documentTitle, StringComparison.OrdinalIgnoreCase));
+
+            if (targetDoc == null)
+            {
+                throw new BridgeCommandException(
+                    "document_not_found",
+                    string.Format(CultureInfo.InvariantCulture, "No open document with title '{0}' was found in this Revit session.", documentTitle),
+                    new JObject
+                    {
+                        ["requestedTitle"] = documentTitle,
+                        ["openDocuments"] = new JArray(allDocs.Select(d => d.Title))
+                    });
+            }
+
+            UIDocument activatedUiDoc;
+            try
+            {
+                if (targetDoc.IsModelInCloud)
+                {
+                    activatedUiDoc = uiApp.OpenAndActivateDocument(targetDoc.GetCloudModelPath());
+                }
+                else
+                {
+                    activatedUiDoc = uiApp.OpenAndActivateDocument(
+                        ModelPathUtils.ConvertUserVisiblePathToModelPath(targetDoc.PathName));
+                }
+            }
+            catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+            {
+                throw new BridgeCommandException(
+                    "activation_failed",
+                    string.Format(CultureInfo.InvariantCulture, "Revit could not activate document '{0}'.", documentTitle),
+                    null,
+                    ex);
+            }
+
+            var activatedDoc = activatedUiDoc != null ? activatedUiDoc.Document : targetDoc;
+            var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
+            result["activatedDocument"] = BuildDocumentSummary(activatedDoc, true);
             return result;
         }
 
