@@ -15,6 +15,15 @@ namespace TadOcRevitBridge
     {
         private const double MetersToFeet = 3.280839895;
 
+        private readonly ActivateDocumentEventHandler _activateDocumentHandler;
+        private readonly ExternalEvent _activateDocumentEvent;
+
+        public RevitBridgeCommandProcessor(ActivateDocumentEventHandler activateDocumentHandler, ExternalEvent activateDocumentEvent)
+        {
+            _activateDocumentHandler = activateDocumentHandler;
+            _activateDocumentEvent = activateDocumentEvent;
+        }
+
         public JObject Execute(UIApplication uiApp, BridgeRequest request)
         {
             if (uiApp == null)
@@ -41,6 +50,8 @@ namespace TadOcRevitBridge
                     return HandleSessionStatus(uiApp, request);
                 case "revit_open_cloud_model":
                     return HandleOpenCloudModel(uiApp, request);
+                case "revit_activate_document":
+                    return HandleActivateDocument(uiApp, request);
                 case "revit_list_3d_views":
                     return HandleList3DViews(uiApp, request);
                 case "revit_export_nwc":
@@ -164,6 +175,26 @@ namespace TadOcRevitBridge
             result["activeDocumentChanged"] = false;
             result["openedDocument"] = BuildDocumentSummary(openedDocument, false);
             return result;
+        }
+
+        private JObject HandleActivateDocument(UIApplication uiApp, BridgeRequest request)
+        {
+            var payload = BridgeJson.ReadPayload<ActivateDocumentPayload>(request);
+            var normalizedRegion = NormalizeCloudRegion(payload.Region);
+            var projectGuid = ParseGuid(payload.ProjectGuid, "projectGuid");
+            var modelGuid = ParseGuid(payload.ModelGuid, "modelGuid");
+            var openOptions = BuildOpenOptions(new OpenCloudModelPayload
+            {
+                Audit = false,
+                Worksets = payload.Worksets
+            });
+            var callback = BuildOpenFromCloudCallback(payload.CloudOpenConflictPolicy);
+
+            _activateDocumentHandler.Prepare(request.JobId, normalizedRegion, projectGuid, modelGuid, openOptions, callback);
+            _activateDocumentEvent.Raise();
+
+            // Returns null: result is written asynchronously by ActivateDocumentEventHandler.Execute()
+            return null;
         }
 
         private JObject HandleList3DViews(UIApplication uiApp, BridgeRequest request)
@@ -720,6 +751,134 @@ namespace TadOcRevitBridge
         public OpenConflictResult OnOpenConflict(OpenConflictScenario scenario)
         {
             return _result;
+        }
+    }
+
+    internal sealed class ActivateDocumentEventHandler : IExternalEventHandler
+    {
+        private readonly string _outboxDir;
+        private readonly System.Text.Encoding _utf8NoBom;
+        private readonly Func<string> _getRevitVersion;
+
+        private string _pendingJobId;
+        private string _pendingRegion;
+        private Guid _pendingProjectGuid;
+        private Guid _pendingModelGuid;
+        private OpenOptions _pendingOpenOptions;
+        private IOpenFromCloudCallback _pendingCallback;
+
+        public ActivateDocumentEventHandler(string outboxDir, System.Text.Encoding utf8NoBom, Func<string> getRevitVersion)
+        {
+            _outboxDir = outboxDir;
+            _utf8NoBom = utf8NoBom;
+            _getRevitVersion = getRevitVersion;
+        }
+
+        public void Prepare(string jobId, string region, Guid projectGuid, Guid modelGuid, OpenOptions openOptions, IOpenFromCloudCallback callback)
+        {
+            _pendingJobId = jobId;
+            _pendingRegion = region;
+            _pendingProjectGuid = projectGuid;
+            _pendingModelGuid = modelGuid;
+            _pendingOpenOptions = openOptions;
+            _pendingCallback = callback;
+        }
+
+        public void Execute(UIApplication app)
+        {
+            var jobId = _pendingJobId;
+            var revitVersion = app.Application.VersionNumber ?? _getRevitVersion();
+            JObject response;
+
+            try
+            {
+                var modelPath = ModelPathUtils.ConvertCloudGUIDsToCloudPath(_pendingRegion, _pendingProjectGuid, _pendingModelGuid);
+                var uiDoc = app.OpenAndActivateDocument(modelPath, _pendingOpenOptions, _pendingCallback);
+
+                if (uiDoc == null)
+                {
+                    throw new BridgeCommandException("activate_failed", "Revit did not return an activated UI document.");
+                }
+
+                var doc = uiDoc.Document;
+                var docSummary = new JObject
+                {
+                    ["isOpen"] = doc != null,
+                    ["isActive"] = doc != null,
+                    ["title"] = doc == null ? null : doc.Title,
+                    ["isCloudModel"] = doc != null && doc.IsModelInCloud,
+                    ["projectGuid"] = null,
+                    ["modelGuid"] = null,
+                    ["region"] = null
+                };
+
+                if (doc != null && doc.IsModelInCloud)
+                {
+                    try
+                    {
+                        var cloudPath = doc.GetCloudModelPath();
+                        docSummary["projectGuid"] = cloudPath.GetProjectGUID().ToString();
+                        docSummary["modelGuid"] = cloudPath.GetModelGUID().ToString();
+                        docSummary["region"] = cloudPath.Region;
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                var result = BridgeResultFactory.CreateSuccess(jobId, "revit_activate_document", revitVersion);
+                result["openedInUi"] = true;
+                result["activeDocumentChanged"] = true;
+                result["activeDocument"] = docSummary;
+                response = result;
+            }
+            catch (RevitServerUnauthenticatedUserException ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion,
+                    new BridgeCommandException("unauthenticated_user", "A signed-in Autodesk user is required in this Revit session before a cloud model can be activated.", null, ex));
+            }
+            catch (RevitServerUnauthorizedException ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion,
+                    new BridgeCommandException("unauthorized_access", "The signed-in Autodesk user does not have access to the requested cloud model.", null, ex));
+            }
+            catch (RevitServerCommunicationException ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion,
+                    new BridgeCommandException("communication_failure", "Revit could not reach Autodesk cloud services while activating the cloud model.", null, ex));
+            }
+            catch (CentralModelException ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion,
+                    new BridgeCommandException("invalid_identifiers", "The region, project GUID, or model GUID could not be resolved to a valid Revit cloud model.", null, ex));
+            }
+            catch (Autodesk.Revit.Exceptions.OperationCanceledException ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion,
+                    new BridgeCommandException("open_cancelled", "Activating the cloud model was cancelled by Revit.", null, ex));
+            }
+            catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion,
+                    new BridgeCommandException("unsupported_context", "Revit rejected the cloud-model activate request in the current application context.", null, ex));
+            }
+            catch (BridgeCommandException ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion, ex);
+            }
+            catch (Exception ex)
+            {
+                response = BridgeResultFactory.CreateError(jobId, "revit_activate_document", revitVersion,
+                    new BridgeCommandException("unhandled_exception", ex.Message, null, ex));
+            }
+
+            var resultFile = System.IO.Path.Combine(_outboxDir, BridgeResultFactory.MakeSafeResultName(jobId) + ".result.json");
+            System.IO.File.WriteAllText(resultFile, BridgeJson.Serialize(response), _utf8NoBom);
+        }
+
+        public string GetName()
+        {
+            return "TAD Activate Document";
         }
     }
 }

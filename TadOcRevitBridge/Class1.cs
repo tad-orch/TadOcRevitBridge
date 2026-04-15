@@ -15,7 +15,9 @@ namespace TadOcRevitBridge
         private const string ArchiveDir = @"D:\TAD\revit-bridge\archive";
         private const string AliveFile = @"D:\TAD\revit-bridge\outbox\revit-addin-alive.json";
 
-        private readonly RevitBridgeCommandProcessor _commandProcessor = new RevitBridgeCommandProcessor();
+        private RevitBridgeCommandProcessor _commandProcessor;
+        private ActivateDocumentEventHandler _activateDocumentHandler;
+        private ExternalEvent _activateDocumentEvent;
         private readonly Encoding _utf8NoBom = new UTF8Encoding(false);
         private bool _isProcessing;
         private string _revitVersion = "unknown";
@@ -29,6 +31,10 @@ namespace TadOcRevitBridge
                 Directory.CreateDirectory(InboxDir);
                 Directory.CreateDirectory(OutboxDir);
                 Directory.CreateDirectory(ArchiveDir);
+
+                _activateDocumentHandler = new ActivateDocumentEventHandler(OutboxDir, _utf8NoBom, () => _revitVersion);
+                _activateDocumentEvent = ExternalEvent.Create(_activateDocumentHandler);
+                _commandProcessor = new RevitBridgeCommandProcessor(_activateDocumentHandler, _activateDocumentEvent);
 
                 WriteAliveFile();
 
@@ -112,7 +118,16 @@ namespace TadOcRevitBridge
                     new BridgeCommandException("unhandled_exception", ex.Message, null, ex));
             }
 
-            var resultFile = Path.Combine(OutboxDir, MakeSafeResultName(jobId) + ".result.json");
+            // A null response means the handler is deferred (e.g. revit_activate_document uses
+            // IExternalEventHandler and writes its own result). Archive the request now to
+            // prevent re-processing on the next idle tick; the handler writes to outbox itself.
+            if (response == null)
+            {
+                ArchiveRequest(firstJob);
+                return;
+            }
+
+            var resultFile = Path.Combine(OutboxDir, BridgeResultFactory.MakeSafeResultName(jobId) + ".result.json");
             File.WriteAllText(resultFile, BridgeJson.Serialize(response), _utf8NoBom);
 
             ArchiveRequest(firstJob);
@@ -147,21 +162,5 @@ namespace TadOcRevitBridge
             File.WriteAllText(AliveFile, BridgeJson.Serialize(alive), _utf8NoBom);
         }
 
-        private static string MakeSafeResultName(string jobId)
-        {
-            var fallback = "revit-job";
-            if (string.IsNullOrWhiteSpace(jobId))
-            {
-                return fallback;
-            }
-
-            var invalidChars = Path.GetInvalidFileNameChars();
-            var safe = new string(jobId
-                .Trim()
-                .Select(ch => invalidChars.Contains(ch) ? '_' : ch)
-                .ToArray());
-
-            return string.IsNullOrWhiteSpace(safe) ? fallback : safe;
-        }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -12,6 +13,7 @@ namespace TadOcRevitBridge
             "revit_create_wall",
             "revit_session_status",
             "revit_open_cloud_model",
+            "revit_activate_document",
             "revit_list_3d_views",
             "revit_export_nwc"
         };
@@ -87,6 +89,23 @@ namespace TadOcRevitBridge
 
     internal static class BridgeResultFactory
     {
+        public static string MakeSafeResultName(string jobId)
+        {
+            const string fallback = "revit-job";
+            if (string.IsNullOrWhiteSpace(jobId))
+            {
+                return fallback;
+            }
+
+            var invalidChars = System.IO.Path.GetInvalidFileNameChars();
+            var safe = new string(jobId
+                .Trim()
+                .Select(ch => invalidChars.Contains(ch) ? '_' : ch)
+                .ToArray());
+
+            return string.IsNullOrWhiteSpace(safe) ? fallback : safe;
+        }
+
         public static JObject CreateSuccess(string jobId, string tool, string revitVersion)
         {
             return CreateEnvelope(true, "completed", jobId, tool, revitVersion);
@@ -218,5 +237,23 @@ namespace TadOcRevitBridge
 
         [JsonProperty("exportScope")]
         public string ExportScope { get; set; }
+    }
+
+    internal sealed class ActivateDocumentPayload
+    {
+        [JsonProperty("region")]
+        public string Region { get; set; }
+
+        [JsonProperty("projectGuid")]
+        public string ProjectGuid { get; set; }
+
+        [JsonProperty("modelGuid")]
+        public string ModelGuid { get; set; }
+
+        [JsonProperty("worksets")]
+        public WorksetOpenRequest Worksets { get; set; }
+
+        [JsonProperty("cloudOpenConflictPolicy")]
+        public string CloudOpenConflictPolicy { get; set; }
     }
 }
