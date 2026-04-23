@@ -100,25 +100,48 @@ namespace TadOcRevitBridge
             var projectGuid = ParseGuid(payload.ProjectGuid, "projectGuid");
             var modelGuid = ParseGuid(payload.ModelGuid, "modelGuid");
 
-            if (payload.OpenInUi)
-            {
-                throw new BridgeCommandException(
-                    "unsupported_context",
-                    "openInUi=true is not supported by the current idling queue path. Use openInUi=false or activate the opened document manually in Revit after it is opened.",
-                    new JObject
-                    {
-                        ["openInUi"] = true
-                    });
-            }
-
             var openOptions = BuildOpenOptions(payload);
             var callback = BuildOpenFromCloudCallback(payload.CloudOpenConflictPolicy);
-            Document openedDocument;
 
             try
             {
                 var modelPath = ModelPathUtils.ConvertCloudGUIDsToCloudPath(normalizedRegion, projectGuid, modelGuid);
-                openedDocument = uiApp.Application.OpenDocumentFile(modelPath, openOptions, callback);
+
+                if (payload.OpenInUi)
+                {
+                    // Open and activate in the Revit UI — visible to the user immediately
+                    var uiDoc = uiApp.OpenAndActivateDocument(modelPath, openOptions, false, callback);
+                    if (uiDoc == null)
+                    {
+                        throw new BridgeCommandException("open_failed", "Revit did not return an opened UI document for the cloud-model request.");
+                    }
+
+                    var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
+                    result["openedInUi"] = true;
+                    result["activeDocumentChanged"] = true;
+                    result["openedDocument"] = BuildDocumentSummary(uiDoc.Document, true);
+                    return result;
+                }
+                else
+                {
+                    // Open silently without activating in the UI
+                    var openedDocument = uiApp.Application.OpenDocumentFile(modelPath, openOptions, callback);
+
+                    if (openedDocument == null)
+                    {
+                        throw new BridgeCommandException("open_failed", "Revit did not return an opened document for the cloud-model request.");
+                    }
+
+                    var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
+                    result["openedInUi"] = false;
+                    result["activeDocumentChanged"] = false;
+                    result["openedDocument"] = BuildDocumentSummary(openedDocument, false);
+                    return result;
+                }
+            }
+            catch (BridgeCommandException)
+            {
+                throw;
             }
             catch (RevitServerUnauthenticatedUserException ex)
             {
@@ -153,17 +176,6 @@ namespace TadOcRevitBridge
             {
                 throw new BridgeCommandException("unsupported_context", "Revit rejected the cloud-model open request in the current application context.", null, ex);
             }
-
-            if (openedDocument == null)
-            {
-                throw new BridgeCommandException("open_failed", "Revit did not return an opened document for the cloud-model request.");
-            }
-
-            var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
-            result["openedInUi"] = false;
-            result["activeDocumentChanged"] = false;
-            result["openedDocument"] = BuildDocumentSummary(openedDocument, false);
-            return result;
         }
 
         private JObject HandleList3DViews(UIApplication uiApp, BridgeRequest request)
