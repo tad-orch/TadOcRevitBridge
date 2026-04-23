@@ -34,12 +34,12 @@
 
   <ItemGroup>
     <Reference Include="RevitAPI">
-      <HintPath>$(RevitInstallDir)\RevitAPI.dll</HintPath>
-      <Private>false</Private>
+      <HintPath>C:\Program Files\Autodesk\Revit 2025\RevitAPI.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="RevitAPIUI">
-      <HintPath>$(RevitInstallDir)\RevitAPIUI.dll</HintPath>
-      <Private>false</Private>
+      <HintPath>C:\Program Files\Autodesk\Revit 2025\RevitAPIUI.dll</HintPath>
+      <Private>False</Private>
     </Reference>
   </ItemGroup>
 

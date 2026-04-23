@@ -100,17 +100,6 @@ namespace TadOcRevitBridge
             var projectGuid = ParseGuid(payload.ProjectGuid, "projectGuid");
             var modelGuid = ParseGuid(payload.ModelGuid, "modelGuid");
 
-            if (payload.OpenInUi)
-            {
-                throw new BridgeCommandException(
-                    "unsupported_context",
-                    "openInUi=true is not supported by the current idling queue path. Use openInUi=false or activate the opened document manually in Revit after it is opened.",
-                    new JObject
-                    {
-                        ["openInUi"] = true
-                    });
-            }
-
             var openOptions = BuildOpenOptions(payload);
             var callback = BuildOpenFromCloudCallback(payload.CloudOpenConflictPolicy);
             Document openedDocument;
@@ -159,8 +148,14 @@ namespace TadOcRevitBridge
                 throw new BridgeCommandException("open_failed", "Revit did not return an opened document for the cloud-model request.");
             }
 
+            // Queue activation for the next Idling tick — OpenAndActivateDocument
+            // cannot be called safely within the same Idling handler that called
+            // OpenDocumentFile. Class1.App will complete the activation and write
+            // the result file on the next tick.
+            App.PendingActivationPath = openedDocument.PathName;
+
             var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
-            result["openedInUi"] = false;
+            result["openedInUi"] = false;        // will be updated by FlushPendingActivation
             result["activeDocumentChanged"] = false;
             result["openedDocument"] = BuildDocumentSummary(openedDocument, false);
             return result;
