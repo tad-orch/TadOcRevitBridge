@@ -102,12 +102,46 @@ namespace TadOcRevitBridge
 
             var openOptions = BuildOpenOptions(payload);
             var callback = BuildOpenFromCloudCallback(payload.CloudOpenConflictPolicy);
-            Document openedDocument;
 
             try
             {
                 var modelPath = ModelPathUtils.ConvertCloudGUIDsToCloudPath(normalizedRegion, projectGuid, modelGuid);
-                openedDocument = uiApp.Application.OpenDocumentFile(modelPath, openOptions, callback);
+
+                if (payload.OpenInUi)
+                {
+                    // Open and activate in the Revit UI â€” visible to the user immediately
+                    var uiDoc = uiApp.OpenAndActivateDocument(modelPath, openOptions, false, callback);
+                    if (uiDoc == null)
+                    {
+                        throw new BridgeCommandException("open_failed", "Revit did not return an opened UI document for the cloud-model request.");
+                    }
+
+                    var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
+                    result["openedInUi"] = true;
+                    result["activeDocumentChanged"] = true;
+                    result["openedDocument"] = BuildDocumentSummary(uiDoc.Document, true);
+                    return result;
+                }
+                else
+                {
+                    // Open silently without activating in the UI
+                    var openedDocument = uiApp.Application.OpenDocumentFile(modelPath, openOptions, callback);
+
+                    if (openedDocument == null)
+                    {
+                        throw new BridgeCommandException("open_failed", "Revit did not return an opened document for the cloud-model request.");
+                    }
+
+                    var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
+                    result["openedInUi"] = false;
+                    result["activeDocumentChanged"] = false;
+                    result["openedDocument"] = BuildDocumentSummary(openedDocument, false);
+                    return result;
+                }
+            }
+            catch (BridgeCommandException)
+            {
+                throw;
             }
             catch (RevitServerUnauthenticatedUserException ex)
             {
@@ -142,23 +176,6 @@ namespace TadOcRevitBridge
             {
                 throw new BridgeCommandException("unsupported_context", "Revit rejected the cloud-model open request in the current application context.", null, ex);
             }
-
-            if (openedDocument == null)
-            {
-                throw new BridgeCommandException("open_failed", "Revit did not return an opened document for the cloud-model request.");
-            }
-
-            // Queue activation for the next Idling tick — OpenAndActivateDocument
-            // cannot be called safely within the same Idling handler that called
-            // OpenDocumentFile. Class1.App will complete the activation and write
-            // the result file on the next tick.
-            App.PendingActivationPath = openedDocument.PathName;
-
-            var result = BridgeResultFactory.CreateSuccess(request.JobId, request.Tool, GetRevitVersion(uiApp));
-            result["openedInUi"] = false;        // will be updated by FlushPendingActivation
-            result["activeDocumentChanged"] = false;
-            result["openedDocument"] = BuildDocumentSummary(openedDocument, false);
-            return result;
         }
 
         private JObject HandleList3DViews(UIApplication uiApp, BridgeRequest request)
