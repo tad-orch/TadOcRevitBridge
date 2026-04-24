@@ -103,6 +103,11 @@ namespace TadOcRevitBridge
             {
                 response = BridgeResultFactory.CreateError(jobId, tool, _revitVersion, ex);
             }
+            catch (IOException ex) when (IsFileLocked(ex))
+            {
+                // File is still being written by the bridge process — skip and retry on the next Idling tick.
+                return;
+            }
             catch (Exception ex)
             {
                 response = BridgeResultFactory.CreateError(
@@ -116,6 +121,13 @@ namespace TadOcRevitBridge
             File.WriteAllText(resultFile, BridgeJson.Serialize(response), _utf8NoBom);
 
             ArchiveRequest(firstJob);
+        }
+
+        private static bool IsFileLocked(IOException ex)
+        {
+            // Win32 ERROR_SHARING_VIOLATION (32) or ERROR_LOCK_VIOLATION (33)
+            var errorCode = ex.HResult & 0xFFFF;
+            return errorCode == 32 || errorCode == 33;
         }
 
         private void ArchiveRequest(string requestPath)
