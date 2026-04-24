@@ -2,23 +2,6 @@
 
 `TadOcRevitBridge` is the Revit-side execution layer used by the Windows bridge (`TAD-Bridge-OC`) and the MCP/backend orchestrator (`TAD-BIM-Host-Runner`).
 
-## Project Variants
-
-This repository contains two project variants that produce the same `TadOcRevitBridge.dll` add-in, each targeting a different Revit generation:
-
-| Variant | Folder | Target Framework | Revit versions |
-|---|---|---|---|
-| Multi-version (default) | `TadOcRevitBridge/` | `net8.0-windows` (2025/2026) or `net48` (2024) via `RevitVersion` property | 2024, 2025, 2026 |
-| Revit 2024 standalone | `TadOcRevitBridge2024/` | `net48` (.NET Framework 4.8) hardcoded | 2024 only |
-
-**Revit 2025 and 2026** — use `TadOcRevitBridge/TadOcRevitBridge.csproj` with `RevitVersion=2025` or `RevitVersion=2026`. Targets `net8.0-windows`.
-
-**Revit 2024** — you have two options:
-- Use `TadOcRevitBridge/TadOcRevitBridge.csproj` with `-p:RevitVersion=2024` (targets `net48`, requires .NET Framework 4.8 developer pack).
-- Use `TadOcRevitBridge2024/TadOcRevitBridge2024.csproj` — a standalone project hardcoded for `net48` and the Revit 2024 API DLLs at `C:\Program Files\Autodesk\Revit 2024\`. This is the simpler option when you only need to build for Revit 2024 and want to open a single self-contained project in Visual Studio.
-
-Both variants share identical C# source files and produce a `TadOcRevitBridge.dll` with the same tool contracts and JSON protocol.
-
 The add-in stays intentionally narrow:
 
 - Revit API execution happens here.
@@ -255,22 +238,17 @@ The add-in keeps one logical tool contract across Revit 2024, 2025, and 2026.
 
 Build strategy:
 
-- Revit 2024 builds against `net48` (.NET Framework 4.8)
+- Revit 2024 builds against `net48`
 - Revit 2025 builds against `net8.0-windows`
 - Revit 2026 builds against `net8.0-windows`
+- The Revit API reference path is selected with `RevitVersion`
 - Command names and JSON contracts do not change by Revit version
 
-Multi-version project (`TadOcRevitBridge/`):
+Project details:
 
 - project file: `TadOcRevitBridge/TadOcRevitBridge.csproj`
 - required build property: `RevitVersion=2024|2025|2026`
 - optional override: `RevitInstallDir=C:\Program Files\Autodesk\Revit 2025`
-
-Revit 2024 standalone project (`TadOcRevitBridge2024/`):
-
-- project file: `TadOcRevitBridge2024/TadOcRevitBridge2024.csproj`
-- no extra build properties required
-- Revit API DLLs expected at `C:\Program Files\Autodesk\Revit 2024\` (override with `RevitInstallDir`)
 
 ## Bridge Expectations
 
@@ -305,26 +283,10 @@ Build prerequisites:
 - .NET 8 SDK for Revit 2025 and 2026 builds
 - Visual Studio 2022 17.8 or later if you are building the .NET 8 variants inside Visual Studio
 
-### Revit 2024 (multi-version project)
+### Revit 2024
 
 ```powershell
 dotnet build .\TadOcRevitBridge\TadOcRevitBridge.csproj -c Release -p:RevitVersion=2024
-```
-
-Output: `TadOcRevitBridge\bin\Release\Revit2024\`
-
-### Revit 2024 (standalone project)
-
-```powershell
-dotnet build .\TadOcRevitBridge2024\TadOcRevitBridge2024.csproj -c Release
-```
-
-Output: `TadOcRevitBridge2024\bin\Release\`
-
-To override the Revit install path:
-
-```powershell
-dotnet build .\TadOcRevitBridge2024\TadOcRevitBridge2024.csproj -c Release -p:RevitInstallDir="D:\Autodesk\Revit 2024"
 ```
 
 ### Revit 2025
@@ -333,17 +295,13 @@ dotnet build .\TadOcRevitBridge2024\TadOcRevitBridge2024.csproj -c Release -p:Re
 dotnet build .\TadOcRevitBridge\TadOcRevitBridge.csproj -c Release -p:RevitVersion=2025
 ```
 
-Output: `TadOcRevitBridge\bin\Release\Revit2025\`
-
 ### Revit 2026
 
 ```powershell
 dotnet build .\TadOcRevitBridge\TadOcRevitBridge.csproj -c Release -p:RevitVersion=2026
 ```
 
-Output: `TadOcRevitBridge\bin\Release\Revit2026\`
-
-### Build all targeted versions (multi-version project)
+### Build all targeted versions
 
 ```powershell
 dotnet msbuild .\TadOcRevitBridge\TadOcRevitBridge.csproj /t:BuildAllRevitVersions /p:Configuration=Release
@@ -359,9 +317,10 @@ Expected output folders:
 
 1. Build the version that matches the installed Revit major version.
 2. Copy `TadOcRevitBridge.dll` and any copied dependency DLLs from the matching output folder to your deployment location.
-3. Copy the `.addin` manifest to the matching Revit addins directory:
-   - For Revit 2024 (standalone project): use `TadOcRevitBridge2024\TadOcRevitBridge2024.addin` → `%AppData%\Autodesk\Revit\Addins\2024\`
-   - For Revit 2024/2025/2026 (multi-version project): create or update the manifest manually under `%AppData%\Autodesk\Revit\Addins\<year>\`
+3. Create or update the `.addin` manifest for the matching Revit year under:
+   - `%AppData%\Autodesk\Revit\Addins\2024\`
+   - `%AppData%\Autodesk\Revit\Addins\2025\`
+   - `%AppData%\Autodesk\Revit\Addins\2026\`
 4. Point the manifest `Assembly` path at the built `TadOcRevitBridge.dll`.
 5. Restart Revit and confirm `revit-addin-alive.json` appears in the outbox.
 

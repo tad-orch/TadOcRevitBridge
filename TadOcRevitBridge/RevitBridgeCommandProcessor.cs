@@ -109,9 +109,8 @@ namespace TadOcRevitBridge
 
                 if (payload.OpenInUi)
                 {
-                    // Open and activate in the Revit UI — visible to the user immediately.
-                    // Use 3-param overload (compatible with Revit 2025+); Revit handles conflict dialogs natively in UI mode.
-                    var uiDoc = uiApp.OpenAndActivateDocument(modelPath, openOptions, false);
+                    // Open and activate in the Revit UI — visible to the user immediately
+                    var uiDoc = uiApp.OpenAndActivateDocument(modelPath, openOptions, false, callback);
                     if (uiDoc == null)
                     {
                         throw new BridgeCommandException("open_failed", "Revit did not return an opened UI document for the cloud-model request.");

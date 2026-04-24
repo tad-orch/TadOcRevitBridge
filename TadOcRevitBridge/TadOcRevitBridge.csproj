@@ -8,9 +8,13 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <RevitVersion Condition="'$(RevitVersion)' == ''">2026</RevitVersion>
+    <!-- Auto-detect highest installed Revit version when not explicitly set -->
+    <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2027\RevitAPI.dll')">2027</RevitVersion>
+    <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2026\RevitAPI.dll')">2026</RevitVersion>
+    <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2025\RevitAPI.dll')">2025</RevitVersion>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2024</RevitVersion>
     <TargetFramework Condition="'$(RevitVersion)' == '2024'">net48</TargetFramework>
-    <TargetFramework Condition="'$(RevitVersion)' == '2025' Or '$(RevitVersion)' == '2026'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(RevitVersion)' == '2025' Or '$(RevitVersion)' == '2026' Or '$(RevitVersion)' == '2027'">net8.0-windows</TargetFramework>
     <OutputPath>bin\$(Configuration)\Revit$(RevitVersion)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
@@ -44,15 +48,16 @@
   </ItemGroup>
 
   <Target Name="ValidateRevitBuildInputs" BeforeTargets="PrepareForBuild">
-    <Error Condition="'$(RevitVersion)' != '2024' and '$(RevitVersion)' != '2025' and '$(RevitVersion)' != '2026'" Text="RevitVersion must be 2024, 2025, or 2026." />
+    <Error Condition="'$(RevitVersion)' != '2024' and '$(RevitVersion)' != '2025' and '$(RevitVersion)' != '2026' and '$(RevitVersion)' != '2027'" Text="RevitVersion must be 2024, 2025, 2026, or 2027." />
     <Error Condition="'$(TargetFramework)' == ''" Text="Unable to determine TargetFramework for RevitVersion=$(RevitVersion)." />
     <Error Condition="!Exists('$(RevitInstallDir)\RevitAPI.dll')" Text="RevitAPI.dll was not found at $(RevitInstallDir). Set RevitInstallDir to the installed Revit directory for Revit $(RevitVersion)." />
     <Error Condition="!Exists('$(RevitInstallDir)\RevitAPIUI.dll')" Text="RevitAPIUI.dll was not found at $(RevitInstallDir). Set RevitInstallDir to the installed Revit directory for Revit $(RevitVersion)." />
   </Target>
 
   <Target Name="BuildAllRevitVersions">
-    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration);RevitVersion=2024" />
-    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration);RevitVersion=2025" />
-    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration);RevitVersion=2026" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration);RevitVersion=2024" Condition="Exists('$(ProgramFiles)\Autodesk\Revit 2024\RevitAPI.dll')" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration);RevitVersion=2025" Condition="Exists('$(ProgramFiles)\Autodesk\Revit 2025\RevitAPI.dll')" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration);RevitVersion=2026" Condition="Exists('$(ProgramFiles)\Autodesk\Revit 2026\RevitAPI.dll')" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Configuration=$(Configuration);RevitVersion=2027" Condition="Exists('$(ProgramFiles)\Autodesk\Revit 2027\RevitAPI.dll')" />
   </Target>
 </Project>
