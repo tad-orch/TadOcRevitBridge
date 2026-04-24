@@ -8,10 +8,10 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <!-- Auto-detect highest installed Revit version when not explicitly set -->
-    <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2027\RevitAPI.dll')">2027</RevitVersion>
-    <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2026\RevitAPI.dll')">2026</RevitVersion>
+    <!-- Auto-detect lowest installed Revit version >= 2025 (prefer stable/tested versions first) -->
     <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2025\RevitAPI.dll')">2025</RevitVersion>
+    <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2026\RevitAPI.dll')">2026</RevitVersion>
+    <RevitVersion Condition="'$(RevitVersion)' == '' And Exists('$(ProgramFiles)\Autodesk\Revit 2027\RevitAPI.dll')">2027</RevitVersion>
     <RevitVersion Condition="'$(RevitVersion)' == ''">2024</RevitVersion>
     <TargetFramework Condition="'$(RevitVersion)' == '2024'">net48</TargetFramework>
     <TargetFramework Condition="'$(RevitVersion)' == '2025' Or '$(RevitVersion)' == '2026' Or '$(RevitVersion)' == '2027'">net8.0-windows</TargetFramework>
